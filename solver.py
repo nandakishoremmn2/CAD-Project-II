@@ -122,6 +122,8 @@ class Solver(object):
 			( self.flux.v[1:-1,3:-3]/(self.u0**2*self.d0) )**2 +\
 			( self.flux.d[1:-1,3:-3]/(self.d0*self.u0) )**2 
 		self.residue.append( np.sqrt(np.sum(RN0)) )
+		if self.iterations == 100:
+			self.residue = self.residue[100:]
 
 	def findFlux(self):
 		self.h 				= self.p*self.gamma/self.d/(self.gamma-1) + .5*(self.u**2+self.v**2)
@@ -366,6 +368,8 @@ class Solver(object):
 					self.saveAll()
 			self.plotConvergence()
 			plt.show()
+		self.saveData()
+		self.saveAll()
 		self.log()
 
 def parseCmdArgs():
