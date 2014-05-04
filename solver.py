@@ -41,6 +41,7 @@ class Point(object):
 class Solver(object):
 	def __init__(self, *args, **kwargs):
 		self.start = time.time()
+		self.settings = kwargs
 		self.plotInterval = kwargs["plotInterval"]
 		self.tolerance = kwargs["tolerance"]
 		self.dumpfile = kwargs["savefile"]
@@ -101,12 +102,12 @@ class Solver(object):
 	def setParameters(self):
 		self.c 			= 1.
 		self.gamma		= 1.4
-		self.MachNo 	= .4
+		self.MachNo 	= self.settings["mach"]
 		self.p0 		= 100000.
 		self.d0 		= 1.225
 		self.u0 		= self.MachNo*np.sqrt(self.gamma*self.p0/self.d0)
 		self.v0 		= 0.
-		self.cfl 		= .4
+		self.cfl 		= self.settings["cfl"]
 		self.beta 		= 10.
 		self.timeStep 	= .000001
 		self.iterations = 0
@@ -141,7 +142,7 @@ class Solver(object):
 		self.xD_plus 		= .25*(1+self.xMPos)**2 * (2-self.xMPos)
 		self.xD_minus 		= .25*(1-self.xMNeg)**2 * (2+self.xMNeg)
 		self.xD_bar_plus 	= self.xAlpha_pos*(1+self.xBeta_pos) - self.xBeta_pos*self.xD_plus
-		self.xD_bar_minus 	= self.xAlpha_pos*(1+self.xBeta_neg) - self.xBeta_neg*self.xD_minus
+		self.xD_bar_minus 	= self.xAlpha_neg*(1+self.xBeta_neg) - self.xBeta_neg*self.xD_minus
 
 		self.xFlux.d[:,1:-1] = self.xar[:,1:-1]*(  self.d[:,:-1]*self.a[:,:-1]*self.xC_plus + self.d[:,1:]*self.a[:,1:]*self.xC_minus  )
 		self.xFlux.u[:,1:-1] = self.xar[:,1:-1]*(  self.d[:,:-1]*self.a[:,:-1]*self.xC_plus*self.u[:,:-1] + self.d[:,1:]*self.a[:,1:]*self.xC_minus*self.u[:,1:]  ) +\
@@ -162,7 +163,7 @@ class Solver(object):
 		self.yD_plus 		= .25*(1+self.yMPos)**2 * (2-self.yMPos)
 		self.yD_minus 		= .25*(1-self.yMNeg)**2 * (2+self.yMNeg)
 		self.yD_bar_plus 	= self.yAlpha_pos*(1+self.yBeta_pos) - self.yBeta_pos*self.yD_plus
-		self.yD_bar_minus 	= self.yAlpha_pos*(1+self.yBeta_neg) - self.yBeta_neg*self.yD_minus
+		self.yD_bar_minus 	= self.yAlpha_neg*(1+self.yBeta_neg) - self.yBeta_neg*self.yD_minus
 
 		self.yFlux.d[1:-1,:] = self.yar[1:-1,:]*(  self.d[:-1,:]*self.a[:-1,:]*self.yC_plus + self.d[1:,:]*self.a[1:,:]*self.yC_minus  )
 		self.yFlux.u[1:-1,:] = self.yar[1:-1,:]*(  self.d[:-1,:]*self.a[:-1,:]*self.yC_plus*self.u[:-1,:] + self.d[1:,:]*self.a[1:,:]*self.yC_minus*self.u[1:,:]  ) +\
@@ -202,7 +203,7 @@ class Solver(object):
 		self.u = np.ones([self.size.y-1, self.size.x-1], dtype=float)*(self.u0)
 		# self.u = np.ones([self.size.y-1, self.size.x-1], dtype=float)*(self.u0*((self.x-3.5)/-7.))
 		# self.u = np.where(self.u<self.u0/2, self.u0/2, self.u)
-		self.v = np.ones([self.size.y-1, self.size.x-1], dtype=float)*(self.v0+10)
+		self.v = np.ones([self.size.y-1, self.size.x-1], dtype=float)*(self.v0)
 		self.p = np.ones([self.size.y-1, self.size.x-1], dtype=float)*self.p0
 
 		self.primitive_to_conservative()
@@ -219,18 +220,20 @@ class Solver(object):
 		self.p = ( self.de - .5*self.d*( self.u**2+self.v**2 ) )/( self.gamma-1 )
 
 	def setBoundaryValues(self):
-		a = np.sqrt(self.gamma*self.p[:,0:2]/self.d[:,0:2])
-		a = (a[:,0] + a[:,1])/2.
-		self.inflowM = self.u[:,1]/a
+		# a = np.sqrt(self.gamma*self.p[:,0:2]/self.d[:,0:2])
+		# a = (a[:,0] + a[:,1])/2.
+		# self.inflowM = self.u[:,1]/a
+		self.inflowM = self.MachNo
 
 		self.d[:,0] = np.where(self.inflowM>=1, self.d0, self.d0)
 		self.u[:,0] = np.where(self.inflowM>=1, self.u0, self.u[:,1])
 		self.v[:,0] = np.where(self.inflowM>=1, self.v0, self.v0)
 		self.p[:,0] = np.where(self.inflowM>=1, self.p0, self.p0)
 
-		a = np.sqrt(self.gamma*self.p[:,0:2]/self.d[:,0:2])
-		a = (a[:,0] + a[:,1])/2.
-		self.outflowM = self.u[:,1]/a
+		# a = np.sqrt(self.gamma*self.p[:,-2:]/self.d[:,-2:])
+		# a = (a[:,0] + a[:,1])/2.
+		# self.outflowM = self.u[:,1]/a
+		self.outflowM = self.MachNo
 
 		self.d[:,-1] = np.where(self.outflowM>=1, self.d[:,-2], self.d[:,-2])
 		self.u[:,-1] = np.where(self.outflowM>=1, self.u[:,-2], self.u0)
@@ -238,13 +241,12 @@ class Solver(object):
 		self.p[:,-1] = np.where(self.outflowM>=1, self.p[:,-2], self.p[:,-2])
 
 	def findLocalTimeStep(self):
-		temp  	= np.abs(self.u*self.xnx[:,:-1]+self.v*self.xny[:,:-1])\
-		 		+ np.abs(self.u*self.xnx[:,1:]+self.v*self.xny[:,1:])\
-		 		+ np.abs(self.u*self.ynx[:-1,:]+self.v*self.yny[:-1,:])\
-				+ np.abs(self.u*self.ynx[1:,:]+self.v*self.yny[1:,:])\
-				+ 4*self.a
+		temp  	= (np.abs(self.u*self.xnx[:,:-1]+self.v*self.xny[:,:-1])+self.a)*self.xar[:,:-1]\
+		 		+ (np.abs(self.u*self.xnx[:,1:]+self.v*self.xny[:,1:])+self.a)*self.xar[:,1:]\
+		 		+ (np.abs(self.u*self.ynx[:-1,:]+self.v*self.yny[:-1,:])+self.a)*self.yar[:-1,:]\
+				+ (np.abs(self.u*self.ynx[1:,:]+self.v*self.yny[1:,:])+self.a)*self.yar[1:,:]\
 
-		self.timeStep = 4*self.volume*self.cfl/temp
+		self.timeStep = 2*self.cfl/temp
 
 		# self.timeStep = np.min(self.timeStep)
 
@@ -256,10 +258,10 @@ class Solver(object):
 
 		self.primitive_to_conservative()
 
-		self.d  = self.d  - self.timeStep*( self.flux.d )/self.volume
-		self.du = self.du - self.timeStep*( self.flux.u )/self.volume
-		self.dv = self.dv - self.timeStep*( self.flux.v )/self.volume
-		self.de = self.de - self.timeStep*( self.flux.p )/self.volume
+		self.d  = self.d  - self.timeStep*( self.flux.d )
+		self.du = self.du - self.timeStep*( self.flux.u )
+		self.dv = self.dv - self.timeStep*( self.flux.v )
+		self.de = self.de - self.timeStep*( self.flux.p )
 
 		# self.conservative_to_primitive()
 
@@ -280,18 +282,8 @@ class Solver(object):
 		print "\tTime elapsed = %.2fs"%(time.time()-self.start),
 		print ""
 
-	def saveData(self):
-		dumpfile 		= open(self.dumpfile, "w")
-		pickle.dump(self.p, dumpfile)
-		pickle.dump(self.u, dumpfile)
-		pickle.dump(self.v, dumpfile)
-		pickle.dump(self.h, dumpfile)
-		pickle.dump(self.residue, dumpfile)
-		pickle.dump(self.iterations, dumpfile)
-		dumpfile.close()
-
 	def saveAll(self):
-		scipy.io.savemat("all_data.mat",
+		scipy.io.savemat(self.dumpfile,
 			{
 				"x": self.x,
 				"y": self.y,
@@ -304,13 +296,13 @@ class Solver(object):
 			})
 
 	def loadData(self):
-		dumpfile 		= open(self.dumpfile)
-		self.d 			= pickle.load(dumpfile)
-		self.u 			= pickle.load(dumpfile)
-		self.v 			= pickle.load(dumpfile)
-		self.h 			= pickle.load(dumpfile)
-		self.residue 	= pickle.load(dumpfile)
-		self.iterations = pickle.load(dumpfile)
+		data = scipy.io.loadmat(self.dumpfile)
+		self.p = data["p"]
+		self.v = data["v"]
+		self.u = data["u"]
+		self.d = data["d"]
+		self.residue = data["residue"].tolist()
+		self.iterations = data["iterations"]
 
 	def plotMesh(self, ):
 		plt.hold(True)
@@ -328,7 +320,7 @@ class Solver(object):
 		# self.CS = self.plt.plot(self.x[:,24], self.v[:,24])
     
 	def plotConvergence(self):
-		self.plt.plot(np.arange(1,len(self.residue),1), np.array(self.residue[1:])/self.residue[0])
+		self.plt.plot(np.array(self.residue[1:])/self.residue[0])
 		self.plt.yscale("log")
 		self.plt.show()
 
@@ -348,7 +340,6 @@ class Solver(object):
 			self.marchOneStep()
 		self.plotField()
 		self.log()
-		self.saveData()
 		self.saveAll()
 
 	def solve(self, *args, **kwargs):
@@ -364,11 +355,9 @@ class Solver(object):
 					# if self.animate:
 					# 	self.plotField() 
 					self.log()
-					self.saveData()
 					self.saveAll()
 			self.plotConvergence()
 			plt.show()
-		self.saveData()
 		self.saveAll()
 		self.log()
 
@@ -376,10 +365,12 @@ def parseCmdArgs():
 	parser = OptionParser()
 	
 	parser.add_option("-r", "--resume", action="store_true", dest="resume", help="resume iteration")
+	parser.add_option("-c", "--cfl", action="store", dest="cfl", default=.5, help="cfl no.")
+	parser.add_option("-m", "--mach", action="store", dest="mach", default=.4, help="Mach number of flow")
 	parser.add_option("-a", "--animate", action="store_true", dest="animate", help="animate the convergence ( really slow )")
 	parser.add_option("-t", "--tolerance", action="store", dest="tolerance", default=1e-4, help="error tolerance level")
 	parser.add_option("-f", "--file", action="store", dest="meshfile", default="bumpgrid.txt", help="filename containing mesh data")
-	parser.add_option("-s", "--savefile", action="store", dest="savefile", default="data_dump.dat", help="file to save and resume intermediate result")
+	parser.add_option("-s", "--savefile", action="store", dest="savefile", default="all_data.mat", help="file to save and resume intermediate result")
 	parser.add_option("-i", "--logInterval", action="store", dest="logInterval", default=1000, help="no. of iterations before saving data and logging output")
 	return parser.parse_args()
 
@@ -390,7 +381,9 @@ if __name__ == '__main__':
 		resume=options.resume,
 		savefile=options.savefile,
 		plotInterval=int(options.logInterval),
-		tolerance=float(options.tolerance)
+		tolerance=float(options.tolerance),
+		cfl=float(options.cfl),
+		mach=float(options.mach),
 		)
 	solver.solve(
 		animate=options.animate
